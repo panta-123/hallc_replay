@@ -1,0 +1,96 @@
+import glob
+import re
+
+PROJECT_DIR = config["project_dir"]
+HCANA_CONTAINER = config["singularity"]["image"]
+SPEC = config["spec"].lower()
+SPEC_UP = config["spec"].upper()
+NEVENTS = config["nevents"]
+
+def get_last_run(patterns):
+    runs = []
+    for p in patterns:
+        for f in glob.glob(f"{PROJECT_DIR}/{p}"):
+            m = re.search(r'0*(\d+)', f)
+            if m:
+                runs.append(int(m.group(1)))
+    return max(runs) if runs else config["run"]
+
+RUN = get_last_run(config["data_paths"])
+
+# -------------------------------
+# Rule: Replay HCANA
+# -------------------------------
+rule replay:
+    container: HCANA_CONTAINER
+    input:
+        data_files=lambda wildcards: sum([glob.glob(f"{PROJECT_DIR}/{p}") for p in config["data_paths"]], [])
+    output:
+        rootfile=f"{PROJECT_DIR}/{config['root_dir']}/{SPEC}_replay_production_{RUN}_{NEVENTS}.root"
+    params:
+        script=f"{PROJECT_DIR}/{config['scripts_dir']}/{SPEC_UP}/PRODUCTION/replay_production_{SPEC}_hElec_pProt.C"
+    shell:
+        """
+        hcana -q "/project/{config[scripts_dir]}/{SPEC_UP}/PRODUCTION/replay_production_{SPEC}_hElec_pProt.C({RUN}, {NEVENTS})"
+        """
+
+# -------------------------------
+# Rule: Coincidence Analysis
+# -------------------------------
+rule analysis:
+    container: HCANA_CONTAINER
+    input:
+        replay_root=f"{PROJECT_DIR}/{config['root_dir']}/{SPEC}_replay_production_{RUN}_{NEVENTS}.root"
+    output:
+        mon_root=f"{PROJECT_DIR}/{config['hist_root_dir']}/{SPEC}_coin_production_{RUN}.root",
+        mon_pdf=f"{PROJECT_DIR}/{config['hist_pdf_dir']}/output_get_good_coin_ev_{RUN}_{NEVENTS}.pdf"
+    params:
+        analysis=f"{PROJECT_DIR}/{config['scripts_dir']}/get_good_coin_ev.C"
+    shell:
+        """
+        hcana -l -b -q "{params.analysis}({RUN},{NEVENTS},100000,'{PROJECT_DIR}/{config[root_dir]}','{PROJECT_DIR}/{config[report_dir]}','{PROJECT_DIR}/{config[hist_pdf_dir]}')"
+        """
+
+# -------------------------------
+# Rule: Run Panguin (Hydra configs)
+# -------------------------------
+rule panguin:
+    container: HCANA_CONTAINER
+    input:
+        rootfile=f"{PROJECT_DIR}/{config['root_dir']}/{SPEC}_replay_production_{RUN}_{NEVENTS}.root"
+    output:
+        pdfs=expand(f"{PROJECT_DIR}/{config['hist_pdf_dir']}/{{cfg_basename}}.pdf", cfg_basename=[os.path.splitext(os.path.basename(c))[0] for c in config["hydra_configs"]])
+    params:
+        configs=config["hydra_configs"]
+    shell:
+        """
+        for cfg in {params.configs}; do
+            cfg_name=$(basename ${{cfg}} .cfg)
+            panguin -f /project/$cfg -r {RUN} -b -E png
+            mv output.pdf /project/{config[hist_pdf_dir]}/$cfg_name.pdf
+        done
+        """
+
+# -------------------------------
+# Rule: FID efficiency plot
+# -------------------------------
+rule fid_efficiency:
+    container: HCANA_CONTAINER
+    input:
+        report=f"{PROJECT_DIR}/{config['report_dir']}/replay_{SPEC}_production_{RUN}_{NEVENTS}.report"
+    output:
+        pdf=f"{PROJECT_DIR}/{config['hist_pdf_dir']}/fid_efficiency_{RUN}.pdf"
+    shell:
+        """
+        python3 /project/plot_effic.py {input.report}
+        """
+
+# -------------------------------
+# Rule: All
+# -------------------------------
+rule all:
+    input:
+        f"{PROJECT_DIR}/{config['hist_root_dir']}/{SPEC}_coin_production_{RUN}.root",
+        f"{PROJECT_DIR}/{config['hist_pdf_dir']}/output_get_good_coin_ev_{RUN}_{NEVENTS}.pdf",
+        expand(f"{PROJECT_DIR}/{config['hist_pdf_dir']}/{{cfg_basename}}.pdf", cfg_basename=[os.path.splitext(os.path.basename(c))[0] for c in config["hydra_configs"]]),
+        f"{PROJECT_DIR}/{config['hist_pdf_dir']}/fid_efficiency_{RUN}.pdf"
