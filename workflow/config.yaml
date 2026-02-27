@@ -1,0 +1,29 @@
+project_dir: "/home/cdaq/rsidis-2025"
+
+spec: rsidis
+nevents: 50000
+run: 12345
+
+data_paths:
+  - "raw/rsidis_production_*.dat.0"
+  - "raw.copiedtotape/rsidis_production_*.dat.0"
+  - "cache/rsidis_production_*.dat.0"
+
+scripts_dir: "SCRIPTS"
+config_dir: "CONFIG/RSIDIS/PRODUCTION"
+
+log_dir: "logs"
+root_dir: "ROOTfiles"
+hist_pdf_dir: "HISTOGRAMS/RSIDIS/PDF"
+hist_root_dir: "HISTOGRAMS/RSIDIS/ROOT"
+report_dir: "REPORT_OUTPUT/RSIDIS/PRODUCTION"
+online_gui_dir: "onlineGUI"
+
+hydra_configs:
+  - "CONFIG/RSIDIS/PRODUCTION/rsidis_production_rsidis.cfg"
+  - "CONFIG/RSIDIS/PRODUCTION/rsidis_production_rsidis_hms.cfg"
+  - "CONFIG/RSIDIS/PRODUCTION/rsidis_production_rsidis_shms.cfg"
+
+singularity:
+  image: "/home/cdaq/containers/hcana.sif"
+  bind: "/home/cdaq/rsidis-2025:/project"
